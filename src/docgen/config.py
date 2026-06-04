@@ -1,5 +1,6 @@
 LLM_FALLBACK_CHAIN = [
-    "google/gemini-2.5-flash",
+    "google/gemma-4-31b-it:free",
+    "google/gemma-4-26b-a4b-it:free",
     "google/gemma-3-27b-it",
     "google/gemini-2.5-flash-lite",
 ]
