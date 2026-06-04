@@ -41,7 +41,8 @@ def _call_model(model: str, messages: list, max_tokens: int = 8192) -> Optional[
             data = resp.json()
             return data["choices"][0]["message"]["content"].strip()
         except HTTPError as e:
-            code = e.response.status_code if e.response is not None else "?"
+            resp_obj = getattr(e, 'response', None)
+            code = resp_obj.status_code if resp_obj is not None else "?"
             if not SUPPRESS_STDERR:
                 sys.stderr.write(f"  [LLM] {model}: HTTP {code}\n")
         except (KeyError, json.JSONDecodeError) as e:

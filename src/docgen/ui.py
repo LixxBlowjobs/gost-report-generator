@@ -86,6 +86,9 @@ class ProgressTracker:
         for key, label in self.STAGES:
             yield key, label, self._steps[key]
 
+    def __rich__(self):
+        return self.render()
+
     def render(self):
         header = Panel(
             Text(BANNER.strip(), style='bold cyan'),
@@ -184,14 +187,13 @@ class Dashboard:
     def __enter__(self):
         self.tracker.attach(self)
         self._live = Live(
-            self.tracker.render(),
+            self.tracker,
             console=self.console,
             refresh_per_second=4,
             vertical_overflow='crop',
             screen=True,
             redirect_stdout=False,
             redirect_stderr=False,
-            get_renderable=self.tracker.render,
         )
         self._live.__enter__()
         return self
