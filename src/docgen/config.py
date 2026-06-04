@@ -1,7 +1,7 @@
 LLM_FALLBACK_CHAIN = [
-    "google/gemini-2.0-flash-001",
-    "google/gemma-3-27b-it:free",
-    "nvidia/nemotron-3-super-120b-a12b:free",
+    "google/gemini-2.5-flash",
+    "google/gemma-3-27b-it",
+    "google/gemini-2.5-flash-lite",
 ]
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"

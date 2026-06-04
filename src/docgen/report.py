@@ -193,13 +193,26 @@ def _build_title_page(doc, meta: dict):
                           first_line_indent=0, space_after=0, line_spacing=1.5)
 
 
+def _estimate_pages(analysis: dict) -> int:
+    n_files = analysis.get("total_files", 0)
+    n_loc = analysis.get("total_loc", 0)
+    n_mods = len(analysis.get("modules", []))
+    base = 18
+    pages = base + n_files // 3 + n_mods + n_loc // 500
+    return max(20, min(pages, 70))
+
+
 def build_report(analysis: dict, metadata: dict, output_path: str,
-                 analysis_path: str = None, skip_postprocess: bool = False) -> str:
+                 analysis_path: str = None, skip_postprocess: bool = False,
+                 progress=None, log_callback=None) -> str:
     log_lines = []
 
     def log(msg):
         log_lines.append(msg)
-        print(f"  {msg}")
+        if log_callback:
+            log_callback(msg)
+        if progress is None:
+            print(f"  {msg}")
 
     t_start = time.time()
     doc = Document()
@@ -222,34 +235,54 @@ def build_report(analysis: dict, metadata: dict, output_path: str,
     styles.add_page_numbers(doc)
 
     # ── Stage 1: Plan ──
+    if progress:
+        progress.update('plan', 'running')
     log("План — генерация...")
     try:
         plan = plan_module.generate(analysis, meta)
-        log(f"План OK ({len(plan.get('chapters', []))} глав, "
-            f"{len(plan.get('reference_topics', []))} тем источников)")
+        detail = (f"{len(plan.get('chapters', []))} глав, "
+                  f"{len(plan.get('reference_topics', []))} тем источников")
+        if progress:
+            progress.update('plan', 'completed', detail=detail)
+        log(f"План OK ({detail})")
     except Exception as e:
+        if progress:
+            progress.update('plan', 'failed', detail=str(e))
         log(f"План: {e} (используются заглушки)")
         plan = plan_module.generate({}, {})
 
     # ── Stage 2: References (so chapters can cite them) ──
+    if progress:
+        progress.update('references', 'running')
     log("Литература — генерация...")
     refs_result = None
     refs_list = []
     try:
         refs_result = references.generate(analysis, meta, plan)
         refs_list = refs_result.get("references", [])
-        log(f"Литература OK ({len(refs_list)} источников)")
+        detail = f"{len(refs_list)} источников"
+        if progress:
+            progress.update('references', 'completed', detail=detail)
+        log(f"Литература OK ({detail})")
     except Exception as e:
+        if progress:
+            progress.update('references', 'failed', detail=str(e))
         log(f"Литература: {e}")
         refs_result = {"references": []}
 
     # ── Stage 3: Introduction ──
+    if progress:
+        progress.update('introduction', 'running')
     log("Введение — генерация...")
     intro_result = None
     try:
         intro_result = intro.generate(analysis, meta, plan)
+        if progress:
+            progress.update('introduction', 'completed')
         log("Введение OK")
     except Exception as e:
+        if progress:
+            progress.update('introduction', 'failed', detail=str(e))
         log(f"Введение: {e}")
         intro_result = {"paragraphs": []}
 
@@ -259,36 +292,59 @@ def build_report(analysis: dict, metadata: dict, output_path: str,
     chapters_plan = plan.get("chapters", [])
     for ch_plan in chapters_plan:
         ch_num = ch_plan.get("num", 1)
+        step_key = f'chapter_{ch_num}'
+        if progress:
+            progress.update(step_key, 'running')
         log(f"Глава {ch_num} — генерация...")
         try:
             ch_result = chapter.generate(analysis, meta, ch_num, ch_plan, refs_list)
             chapter_results[ch_num] = ch_result
-            log(f"Глава {ch_num} OK ({len(ch_result.get('sections', []))} подразделов)")
+            detail = f"{len(ch_result.get('sections', []))} подразделов"
+            if progress:
+                progress.update(step_key, 'completed', detail=detail)
+            log(f"Глава {ch_num} OK ({detail})")
         except Exception as e:
+            if progress:
+                progress.update(step_key, 'failed', detail=str(e))
             log(f"Глава {ch_num}: {e}")
             chapter_results[ch_num] = {"sections": []}
 
     # ── Stage 5: Conclusion ──
+    if progress:
+        progress.update('conclusion', 'running')
     log("Заключение — генерация...")
     conc_result = None
     try:
         conc_result = conclusion.generate(analysis, meta, plan)
+        if progress:
+            progress.update('conclusion', 'completed')
         log("Заключение OK")
     except Exception as e:
+        if progress:
+            progress.update('conclusion', 'failed', detail=str(e))
         log(f"Заключение: {e}")
         conc_result = {"paragraphs": []}
 
     # ── Stage 6: Terms ──
+    if progress:
+        progress.update('terms', 'running')
     log("Термины — генерация...")
     terms_result = None
     try:
         terms_result = terms.generate(analysis, meta)
+        detail = f"{len(terms_result.get('terms', []))} терминов"
+        if progress:
+            progress.update('terms', 'completed', detail=detail)
         log("Термины OK")
     except Exception as e:
+        if progress:
+            progress.update('terms', 'failed', detail=str(e))
         log(f"Термины: {e}")
         terms_result = {"terms": []}
 
     # ── Stage 7: Abstract (last, knows real counts) ──
+    if progress:
+        progress.update('abstract', 'running')
     log("Реферат — генерация...")
     # Pre-count figures/tables/listings from chapter results
     for ch_result in chapter_results.values():
@@ -297,7 +353,7 @@ def build_report(analysis: dict, metadata: dict, output_path: str,
             total_counts["figures"] += len(sec.get("figures", []))
             total_counts["listings"] += len(sec.get("listings", []))
     counts = {
-        "pages": 30,
+        "pages": _estimate_pages(analysis),
         "figures": total_counts["figures"] or 8,
         "tables": total_counts["tables"] or 6,
         "sources": len(refs_list) or 12,
@@ -306,23 +362,32 @@ def build_report(analysis: dict, metadata: dict, output_path: str,
     ab_result = None
     try:
         ab_result = abstract.generate(analysis, meta, counts)
+        if progress:
+            progress.update('abstract', 'completed')
         log("Реферат OK")
     except Exception as e:
+        if progress:
+            progress.update('abstract', 'failed', detail=str(e))
         log(f"Реферат: {e}")
         ab_result = {"volume": "", "keywords": [], "text": ""}
 
     # ── Stage 8: Postprocessing (avoid-ai-writing) ──
     if not skip_postprocess:
+        if progress:
+            progress.update('postprocess', 'running')
         log("Постобработка (avoid-ai-writing)...")
         ab_result = postprocess.clean_section(ab_result)
         intro_result = postprocess.clean_section(intro_result)
         for k in list(chapter_results.keys()):
             chapter_results[k] = postprocess.clean_section(chapter_results[k])
         conc_result = postprocess.clean_section(conc_result)
-        # Note: references and terms are factual, don't clean
+        if progress:
+            progress.update('postprocess', 'completed')
         log("Постобработка OK")
 
     # ── Stage 9: Build DOCX ──
+    if progress:
+        progress.update('build_docx', 'running')
     log("Сборка DOCX...")
     _build_title_page(doc, meta)
 
@@ -362,6 +427,8 @@ def build_report(analysis: dict, metadata: dict, output_path: str,
     references.build(doc, refs_result, styles)
 
     doc.save(output_path)
+    if progress:
+        progress.update('build_docx', 'completed')
     log("Сборка OK")
 
     elapsed = time.time() - t_start

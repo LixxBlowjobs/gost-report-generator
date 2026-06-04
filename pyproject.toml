@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gost-report-generator"
+version = "1.0.0"
+description = "Генератор отчётов о НИР по ГОСТ 7.32-2017"
+dependencies = [
+    "python-docx>=1.1.2",
+    "httpx>=0.27.0",
+    "rich>=13.0.0",
+    "textual>=0.52.0",
+]
+
+[project.scripts]
+docgen = "docgen.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

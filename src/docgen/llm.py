@@ -9,6 +9,9 @@ class LLMError(Exception):
     pass
 
 
+SUPPRESS_STDERR = False
+
+
 def _api_key() -> str:
     key = os.environ.get("OPENROUTER_API_KEY", "")
     if not key:
@@ -39,11 +42,14 @@ def _call_model(model: str, messages: list, max_tokens: int = 8192) -> Optional[
             return data["choices"][0]["message"]["content"].strip()
         except HTTPError as e:
             code = e.response.status_code if e.response is not None else "?"
-            sys.stderr.write(f"  [LLM] {model}: HTTP {code}\n")
+            if not SUPPRESS_STDERR:
+                sys.stderr.write(f"  [LLM] {model}: HTTP {code}\n")
         except (KeyError, json.JSONDecodeError) as e:
-            sys.stderr.write(f"  [LLM] {model}: ответ не распознан ({e})\n")
+            if not SUPPRESS_STDERR:
+                sys.stderr.write(f"  [LLM] {model}: ответ не распознан ({e})\n")
         except Exception as e:
-            sys.stderr.write(f"  [LLM] {model}: {e}\n")
+            if not SUPPRESS_STDERR:
+                sys.stderr.write(f"  [LLM] {model}: {e}\n")
     return None
 
 
@@ -56,8 +62,9 @@ def generate(task_prompt: str, user_prompt: str, max_tokens: int = 8192,
     """
     system = f"{SYSTEM_PROMPT}\n\n{task_prompt}"
     for model in LLM_FALLBACK_CHAIN:
-        sys.stderr.write(f"  [{label or 'LLM'}] {model}... ")
-        sys.stderr.flush()
+        if not SUPPRESS_STDERR:
+            sys.stderr.write(f"  [{label or 'LLM'}] {model}... ")
+            sys.stderr.flush()
         t0 = time.time()
         content = _call_model(model, [
             {"role": "system", "content": system},
@@ -65,11 +72,13 @@ def generate(task_prompt: str, user_prompt: str, max_tokens: int = 8192,
         ], max_tokens=max_tokens)
         elapsed = time.time() - t0
         if content:
-            sys.stderr.write(f"OK ({elapsed:.1f}s)\n")
-            sys.stderr.flush()
+            if not SUPPRESS_STDERR:
+                sys.stderr.write(f"OK ({elapsed:.1f}s)\n")
+                sys.stderr.flush()
             return content
-        sys.stderr.write(f"FAIL ({elapsed:.1f}s)\n")
-        sys.stderr.flush()
+        if not SUPPRESS_STDERR:
+            sys.stderr.write(f"FAIL ({elapsed:.1f}s)\n")
+            sys.stderr.flush()
 
     raise LLMError("Все модели в цепочке отказали")
 
